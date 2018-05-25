@@ -4,6 +4,7 @@ import itertools
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
 
 import torch.optim as optim
 from torch.optim import lr_scheduler
@@ -20,8 +21,12 @@ from cnn_encoder import CNNEncoder, CNNDecoder
 
 from transforms import RandomNoiseWithGT
 
+output_dir='./out'
+batch_size = 32#4
+seq_size=16
+
 def loss_function(recon_x, x, mu, logvar):
-    BCE = F.binary_cross_entropy(recon_x, x.view(-1, 784))
+    BCE = F.binary_cross_entropy(recon_x, x.view(-1, 28**2)).cuda()
 
     # see Appendix B from VAE paper:
     # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
@@ -29,13 +34,10 @@ def loss_function(recon_x, x, mu, logvar):
     # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
     KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     # Normalise by same number of elements as in reconstruction
-    KLD /= args.batch_size * 784
+    KLD /= batch_size * 28**2
 
     return BCE + KLD
 
-output_dir='./out'
-batch_size = 32#4
-seq_size=16
 
 transform = transforms.Compose([
     RandomNoiseWithGT(),
@@ -56,8 +58,8 @@ print(decoder)
 encoder.cuda()
 decoder.cuda()
 
-crit = nn.MSELoss() #nn.BCEWithLogitsLoss()
-crit.cuda()
+crit = loss_function #nn.MSELoss() #nn.BCEWithLogitsLoss()
+#crit.cuda()
 
 params = itertools.chain(encoder.parameters(), decoder.parameters())
 optimizer = optim.Adam(params)#, lr=1e-4)#, weight_decay=1e-4)
@@ -86,7 +88,7 @@ for e in range(100):
         ########
         #Encoder
         ########
-        encoder_out = encoder(corrupt_imgs)
+        encoder_out, mu, logvar = encoder(corrupt_imgs)
 
         logits = decoder(encoder_out)#, encoder_state)
 
@@ -99,7 +101,7 @@ for e in range(100):
         #output = torch.sigmoid(decoder_out)
         #output = threshold(decoder_out)
 
-        loss = crit(output, gt_imgs)
+        loss = crit(output, gt_imgs, mu, logvar)
         ep_loss.append(loss.data.cpu().numpy())
 
         loss.backward()

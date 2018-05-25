@@ -61,7 +61,7 @@ class CNNEncoder(nn.Module):
         mu = self.fc_model(lin_prep)
         log_var = self.log_var_model(lin_prep)
         #logits = self.sigmoid(linear)
-        return self.reparameterize(mu, log_var)
+        return self.reparameterize(mu, log_var), mu, log_var
 
     def reparameterize(self, mu, log_var):
         # TODO: return mu when testing
