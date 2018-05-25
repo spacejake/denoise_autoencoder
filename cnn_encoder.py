@@ -2,15 +2,44 @@
 import torch
 import torch.nn as nn
 
-class CNNEncoder(nn.Module):
-    def __init__(self, input_nc, output_nc=512, hidden_nc=32, n_layers=6, stride_layer=2):
-        super(CNNEncoder, self).__init__()
-        norm_layer = nn.BatchNorm2d
+# Residual block
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, downsample=None):
+        super(ResidualBlock, self).__init__()
 
-        kw = 4
-        padw = 1
+
+        self.resBlock = nn.Sequential(
+            nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
+                      stride=stride, padding=padding),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=kernel_size,
+                      stride=1, padding=1),
+            nn.BatchNorm2d(out_channels),
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+
+        self.downsample = downsample
+
+    def forward(self, x):
+        residual = x
+        out = self.resBlock(x)
+        if self.downsample:
+            residual = self.downsample(x)
+        out += residual
+        out = self.relu(out)
+        return out
+
+class CNNEncoder(nn.Module):
+    def __init__(self, input_nc, output_nc=512, hidden_nc=16, n_layers=6, stride_layer=2):
+        super(CNNEncoder, self).__init__()
+
+        kw = 3
+        padw = 2
         sequence = [
-            nn.Conv2d(input_nc, hidden_nc, kernel_size=kw, stride=1, padding=padw),
+            nn.Conv2d(input_nc, hidden_nc, kernel_size=kw, stride=1, padding=1),
+            nn.BatchNorm2d(hidden_nc),
             nn.ReLU(True) #nn.LeakyReLU(0.2, True)
         ]
 
@@ -18,22 +47,23 @@ class CNNEncoder(nn.Module):
         nf_mult_prev = 1
         for n in range(1, n_layers):
             nf_mult_prev = nf_mult
-            nf_mult = min(2**(n//stride_layer), 8)
+            nf_mult = min(2**(n//stride_layer), 2**4)
+            in_nc = hidden_nc * nf_mult_prev
+            out_nc = hidden_nc * nf_mult
             stride = 2 if n%stride_layer == 0 else 1
             padw=1
             if stride == 2:
-                padw=3
+                padw=0
+
             sequence += [
-                nn.Conv2d(hidden_nc * nf_mult_prev, hidden_nc * nf_mult,
-                          kernel_size=kw, stride=stride, padding=padw),
-                norm_layer(hidden_nc * nf_mult),
-                nn.ReLU(True) #nn.LeakyReLU(0.2, True)
+                self.make_layer(block=ResidualBlock, in_channels=in_nc, out_channels=out_nc, blocks=2,
+                                kernel_size=kw, stride=stride, padding=padw)
             ]
 
         #sequence += [nn.Conv2d(hidden_nc * nf_mult, output_nc, kernel_size=kw, stride=1, padding=padw)]
         prepare_linear_seq = [
             # Enforce size of H and W for FC RNN Layer
-            nn.AdaptiveAvgPool2d((7,7)),
+            nn.AdaptiveAvgPool2d((6,6)),
             Flatten(),
         ]
 
@@ -41,18 +71,32 @@ class CNNEncoder(nn.Module):
             #Add Sequence, SHould we split the image into sequences?????
             #Unsqueeze(1),
             #nn.RNN(input_size=32 * 32 * ngf * mult, hidden_size=256, num_layers=1, bidirectional=False),
-            nn.Linear(7 * 7 * hidden_nc * nf_mult, output_nc),
+            nn.Linear(6 * 6 * hidden_nc * nf_mult, output_nc),
             #nn.BatchNorm1d(output_nc)
         ]
 
         log_var_seq = [
-            nn.Linear(7 * 7 * hidden_nc * nf_mult, output_nc)
+            nn.Linear(6 * 6 * hidden_nc * nf_mult, output_nc)
         ]
 
         self.model = nn.Sequential(*sequence)
         self.prep_linear_model = nn.Sequential(*prepare_linear_seq)
         self.fc_model = nn.Sequential(*fc_sequence)
         self.log_var_model = nn.Sequential(*log_var_seq)
+
+    def make_layer(self, block, in_channels, out_channels, blocks=2, kernel_size=3, stride=1, padding=1):
+        downsample = None
+        if (stride != 1) or (in_channels != out_channels):
+            downsample = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding),
+                nn.BatchNorm2d(out_channels))
+        layers = []
+        layers.append(block(in_channels=in_channels, out_channels=out_channels,
+                            kernel_size=kernel_size, stride=stride, padding=padding, downsample=downsample))
+        self.in_channels = out_channels
+        for i in range(1, blocks):
+            layers.append(block(in_channels=out_channels, out_channels=out_channels, kernel_size=kernel_size))
+        return nn.Sequential(*layers)
 
     def forward(self, input):
         model_out = self.model(input)

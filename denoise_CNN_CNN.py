@@ -34,10 +34,10 @@ dloader = torch.utils.data.DataLoader(raw_data, batch_size=batch_size,
                                       shuffle=True, drop_last=True)
 in_channel = 1 # Network has same dim for input and output
 
-encoder = CNNEncoder(input_nc=1, )
+encoder = CNNEncoder(input_nc=1, output_nc=1024)
 print(encoder)
 
-decoder = CNNDecoder(input_nc=512)
+decoder = CNNDecoder(input_nc=1024)
 print(decoder)
 
 encoder.cuda()
