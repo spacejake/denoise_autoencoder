@@ -40,9 +40,9 @@ class CNNEncoder(nn.Module):
 
         fc_sequence = [
             #Add Sequence, SHould we split the image into sequences?????
-            #Unsqueeze(1),
-            #nn.RNN(input_size=32 * 32 * ngf * mult, hidden_size=256, num_layers=1, bidirectional=False),
-            nn.Linear(7 * 7 * hidden_nc * nf_mult, output_nc),
+            Unsqueeze(1),
+            nn.RNN(input_size=7 * 7 * hidden_nc * nf_mult, hidden_size=output_nc, num_layers=1, bidirectional=False),
+            #nn.Linear(7 * 7 * hidden_nc * nf_mult, output_nc),
             #nn.BatchNorm1d(output_nc)
         ]
 
@@ -58,7 +58,8 @@ class CNNEncoder(nn.Module):
     def forward(self, input):
         model_out = self.model(input)
         lin_prep = self.prep_linear_model(model_out)
-        mu = self.fc_model(lin_prep)
+        mu, _ = self.fc_model(lin_prep)
+        mu = mu.squeeze(1)
         log_var = self.log_var_model(lin_prep)
         #logits = self.sigmoid(linear)
         return self.reparameterize(mu, log_var)
@@ -191,6 +192,14 @@ class Unsqueeze(nn.Module):
     def forward(self, input):
         return input.unsqueeze(self.dim)
 
+class Squeeze(nn.Module):
+    def __init__(self, dim=0):
+        super(Squeeze, self).__init__()
+        self.dim=dim
+
+    def forward(self, input):
+        return input.squeeze(self.dim)
+
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
@@ -218,3 +227,46 @@ class CNN(nn.Module):
         x = x.view(x.size(0), -1)           # flatten the output of conv2 to (batch_size, 32 * 7 * 7)
         output = self.out(x)
         return output, x    # return x for visualization
+
+
+class NLayerDiscriminator(nn.Module):
+    def __init__(self, input_nc, ndf=64, n_layers=3, use_sigmoid=False, use_bias=False):
+
+
+        kw = 4
+        padw = 1
+        sequence = [
+            nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw),
+            nn.LeakyReLU(0.2, True)
+        ]
+
+        nf_mult = 1
+        nf_mult_prev = 1
+        for n in range(1, n_layers):
+            nf_mult_prev = nf_mult
+            nf_mult = min(2**n, 8)
+            sequence += [
+                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult,
+                          kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                nn.BatchNorm2d(ndf * nf_mult),
+                nn.LeakyReLU(0.2, True)
+            ]
+
+        nf_mult_prev = nf_mult
+        nf_mult = min(2**n_layers, 8)
+        sequence += [
+            nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult,
+                      kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+            nn.BatchNorm2d(ndf * nf_mult),
+            nn.LeakyReLU(0.2, True)
+        ]
+
+        sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]
+
+        if use_sigmoid:
+            sequence += [nn.Sigmoid()]
+
+        self.model = nn.Sequential(*sequence)
+
+    def forward(self, input):
+        return self.model(input)
