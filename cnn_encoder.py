@@ -3,14 +3,14 @@ import torch
 import torch.nn as nn
 
 class CNNEncoder(nn.Module):
-    def __init__(self, input_nc, output_nc=128, hidden_in_nc=32, n_layers=6, stride_layer=2):
+    def __init__(self, input_nc, output_nc=512, hidden_nc=32, n_layers=6, stride_layer=2):
         super(CNNEncoder, self).__init__()
         norm_layer = nn.BatchNorm2d
 
         kw = 4
         padw = 1
         sequence = [
-            nn.Conv2d(input_nc, hidden_in_nc, kernel_size=kw, stride=1, padding=padw),
+            nn.Conv2d(input_nc, hidden_nc, kernel_size=kw, stride=1, padding=padw),
             nn.ReLU(True) #nn.LeakyReLU(0.2, True)
         ]
 
@@ -25,33 +25,62 @@ class CNNEncoder(nn.Module):
                 padw=3
 
             sequence += [
-                nn.Conv2d(hidden_in_nc * nf_mult_prev, hidden_in_nc * nf_mult,
+                nn.Conv2d(hidden_nc * nf_mult_prev, hidden_nc * nf_mult,
                           kernel_size=kw, stride=stride, padding=padw),
-                norm_layer(hidden_in_nc * nf_mult),
+                norm_layer(hidden_nc * nf_mult),
                 nn.ReLU(True) #nn.LeakyReLU(0.2, True)
             ]
 
-        sequence += [nn.Conv2d(hidden_in_nc * nf_mult, output_nc, kernel_size=kw, stride=1, padding=padw)]
+        #sequence += [nn.Conv2d(hidden_nc * nf_mult, output_nc, kernel_size=kw, stride=1, padding=padw)]
+
+        fc_sequence = [
+            # Enforce size of H and W for FC RNN Layer
+            nn.AdaptiveAvgPool2d((7,7)),
+            Flatten(),
+
+            #Add Sequence, SHould we split the image into sequences?????
+            #Unsqueeze(1),
+            #nn.RNN(input_size=32 * 32 * ngf * mult, hidden_size=256, num_layers=1, bidirectional=False),
+            nn.Linear(7 * 7 * hidden_nc * nf_mult, output_nc),
+            #nn.BatchNorm1d(output_nc)
+        ]
 
         self.model = nn.Sequential(*sequence)
+        self.fc_model = nn.Sequential(*fc_sequence)
+        self.sigmoid = nn.Sequential(
+            nn.Sigmoid()
+        )
 
     def forward(self, input):
-        return self.model(input)
+        model_out = self.model(input)
+        linear = self.fc_model(model_out)
+        #logits = self.sigmoid(linear)
+        return linear #, logits
+
+
 
 class CNNDecoder(nn.Module):
-    def __init__(self, input_nc=128, hidden_out_nc=32, output_nc=1, n_layers=6, stride_layer=2):
+    def __init__(self, input_nc=512, hidden_nc=32, output_nc=1, n_layers=6, stride_layer=2):
         super(CNNDecoder, self).__init__()
-        norm_layer = nn.BatchNorm2d
+
+        nf_mult = min(2 ** ((n_layers - 1) // stride_layer), 8)
+        nf_mult_prev = 1
+
+        reshape_sequence = [
+            nn.Linear(input_nc, 7*7*(hidden_nc*nf_mult)),
+            nn.BatchNorm1d(7*7*(hidden_nc*nf_mult)),
+            nn.ReLU(True),
+            Expand((hidden_nc*nf_mult), 7, 7)
+        ]
 
         kw = 4
         padw = 1
         sequence = [
-            nn.ConvTranspose2d(input_nc, input_nc, kernel_size=kw, stride=1, padding=padw),
+            nn.ConvTranspose2d(hidden_nc * nf_mult, hidden_nc * nf_mult, kernel_size=kw, stride=1, padding=padw),
             nn.ReLU(True) #nn.LeakyReLU(0.2, True)
         ]
 
-        nf_mult = min(2**((n_layers-1)//stride_layer), 8)
-        nf_mult_prev = 1
+
         for n in reversed(range(1, n_layers)):
             nf_mult_prev = nf_mult
             nf_mult = min(2**(n//stride_layer), 8)
@@ -60,18 +89,20 @@ class CNNDecoder(nn.Module):
             if stride == 2:
                 padw = 3
             sequence += [
-                nn.ConvTranspose2d(hidden_out_nc * nf_mult_prev, hidden_out_nc * nf_mult,
-                          kernel_size=kw, stride=stride, padding=padw),
-                norm_layer(hidden_out_nc * nf_mult),
+                nn.ConvTranspose2d(hidden_nc * nf_mult_prev, hidden_nc * nf_mult,
+                                   kernel_size=kw, stride=stride, padding=padw),
+                nn.BatchNorm2d(hidden_nc * nf_mult),
                 nn.ReLU(True) #nn.LeakyReLU(0.2, True)
             ]
 
-        sequence += [nn.ConvTranspose2d(hidden_out_nc * nf_mult, output_nc, kernel_size=kw, stride=1, padding=padw)]
+        sequence += [nn.ConvTranspose2d(hidden_nc * nf_mult, output_nc, kernel_size=kw, stride=1, padding=padw)]
 
+        self.reshape_model = nn.Sequential(*reshape_sequence)
         self.model = nn.Sequential(*sequence)
 
     def forward(self, input):
-        return self.model(input)
+        reshaped = self.reshape_model(input)
+        return self.model(reshaped)
 
 class DenoiesCNN(nn.Module):
     def __init__(self, in_channel, hidden_channels, use_fc=False, fc_out_channels=None):
@@ -115,10 +146,29 @@ class DenoiesCNN(nn.Module):
     def forward(self, input):
         return self.layers(input)
 
-
 class Flatten(nn.Module):
     def forward(self, input):
-        return input.view(input.size(0), -1)
+        flattened = input.view(input.size(0), -1)
+        return flattened
+
+class Expand(nn.Module):
+    def __init__(self, hidden_nc, height, width):
+        super(Expand,self).__init__()
+        self.hidden_nc = hidden_nc
+        self.height = height
+        self.width = width
+
+    def forward(self, input):
+        expanded = input.view(-1, self.hidden_nc, self.height, self.width)
+        return expanded
+
+class Unsqueeze(nn.Module):
+    def __init__(self, dim=0):
+        super(Unsqueeze, self).__init__()
+        self.dim=dim
+
+    def forward(self, input):
+        return input.unsqueeze(self.dim)
 
 class CNN(nn.Module):
     def __init__(self):

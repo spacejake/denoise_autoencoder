@@ -37,7 +37,7 @@ in_channel = 1 # Network has same dim for input and output
 encoder = CNNEncoder(input_nc=1, )
 print(encoder)
 
-decoder = CNNDecoder(input_nc=128)
+decoder = CNNDecoder(input_nc=512)
 print(decoder)
 
 encoder.cuda()
@@ -47,7 +47,7 @@ crit = nn.MSELoss() #nn.BCEWithLogitsLoss()
 crit.cuda()
 
 params = itertools.chain(encoder.parameters(), decoder.parameters())
-optimizer = optim.Adam(params, lr=1e-4)#, weight_decay=1e-4)
+optimizer = optim.Adam(params)#, lr=1e-4)#, weight_decay=1e-4)
 
 
 # Decay LR by a factor of 0.1 every 5 epochs
