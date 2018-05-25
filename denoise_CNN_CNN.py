@@ -106,11 +106,12 @@ for e in range(100):
 
         loss.backward()
         optimizer.step()
-
+        mseloss = F.mse_loss(output, gt_imgs)
         if i % 100 == 0:
             print("Epoch: {0} | Iter: {1} | LR:{2}".format(e, i, exp_lr_scheduler.get_lr()[0]))
             #print("Epoch: {0} | Iter: {1}".format(e, i))
-            print("Loss: {0}".format(loss.data.cpu().numpy()))#[0]))
+            #print("Loss: {0}".format(loss.data.cpu().numpy()))#[0]))
+            print("MSELoss: {0}".format(mseloss.data.cpu().numpy()))#[0]))
             print("===========================")
 
 
