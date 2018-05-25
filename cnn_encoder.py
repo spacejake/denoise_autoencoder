@@ -1,5 +1,6 @@
 
 import torch
+from torch.autograd import Variable
 import torch.nn as nn
 
 class CNNEncoder(nn.Module):
@@ -63,11 +64,18 @@ class CNNEncoder(nn.Module):
         return self.reparameterize(mu, log_var)
 
     def reparameterize(self, mu, log_var):
+        # TODO: return mu when testing
         # Sample epsilon from standard normal distribution
+        ''' Another way, not as good??
+        std = log_var.mul(0.5).exp_().cuda()
+        eps = Variable(std.data.new(std.size()).normal_()).cuda()
+        return eps.mul(std).add_(mu)
+        '''
         eps = torch.randn(mu.size(0), mu.size(1)).cuda()
         # note that log(x^2) = 2*log(x); hence divide by 2 to get std_dev
         z = mu + eps * torch.exp(log_var / 2.)
         return z
+
 
 class CNNDecoder(nn.Module):
     def __init__(self, input_nc=512, hidden_nc=32, output_nc=1, n_layers=6, stride_layer=2):
