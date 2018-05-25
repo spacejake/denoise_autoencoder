@@ -20,6 +20,19 @@ from cnn_encoder import CNNEncoder, CNNDecoder
 
 from transforms import RandomNoiseWithGT
 
+def loss_function(recon_x, x, mu, logvar):
+    BCE = F.binary_cross_entropy(recon_x, x.view(-1, 784))
+
+    # see Appendix B from VAE paper:
+    # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
+    # https://arxiv.org/abs/1312.6114
+    # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    # Normalise by same number of elements as in reconstruction
+    KLD /= args.batch_size * 784
+
+    return BCE + KLD
+
 output_dir='./out'
 batch_size = 32#4
 seq_size=16
@@ -34,10 +47,10 @@ dloader = torch.utils.data.DataLoader(raw_data, batch_size=batch_size,
                                       shuffle=True, drop_last=True)
 in_channel = 1 # Network has same dim for input and output
 
-encoder = CNNEncoder(input_nc=1, )
+encoder = CNNEncoder(input_nc=1, output_nc=1024)
 print(encoder)
 
-decoder = CNNDecoder(input_nc=512)
+decoder = CNNDecoder(input_nc=1024)
 print(decoder)
 
 encoder.cuda()
