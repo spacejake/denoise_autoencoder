@@ -23,7 +23,6 @@ class CNNEncoder(nn.Module):
             padw=1
             if stride == 2:
                 padw=3
-
             sequence += [
                 nn.Conv2d(hidden_nc * nf_mult_prev, hidden_nc * nf_mult,
                           kernel_size=kw, stride=stride, padding=padw),
@@ -32,12 +31,13 @@ class CNNEncoder(nn.Module):
             ]
 
         #sequence += [nn.Conv2d(hidden_nc * nf_mult, output_nc, kernel_size=kw, stride=1, padding=padw)]
-
-        fc_sequence = [
+        prepare_linear_seq = [
             # Enforce size of H and W for FC RNN Layer
             nn.AdaptiveAvgPool2d((7,7)),
             Flatten(),
+        ]
 
+        fc_sequence = [
             #Add Sequence, SHould we split the image into sequences?????
             #Unsqueeze(1),
             #nn.RNN(input_size=32 * 32 * ngf * mult, hidden_size=256, num_layers=1, bidirectional=False),
@@ -45,19 +45,29 @@ class CNNEncoder(nn.Module):
             #nn.BatchNorm1d(output_nc)
         ]
 
+        log_var_seq = [
+            nn.Linear(7 * 7 * hidden_nc * nf_mult, output_nc)
+        ]
+
         self.model = nn.Sequential(*sequence)
+        self.prep_linear_model = nn.Sequential(*prepare_linear_seq)
         self.fc_model = nn.Sequential(*fc_sequence)
-        self.sigmoid = nn.Sequential(
-            nn.Sigmoid()
-        )
+        self.log_var_model = nn.Sequential(*log_var_seq)
 
     def forward(self, input):
         model_out = self.model(input)
-        linear = self.fc_model(model_out)
+        lin_prep = self.prep_linear_model(model_out)
+        mu = self.fc_model(lin_prep)
+        log_var = self.log_var_model(lin_prep)
         #logits = self.sigmoid(linear)
-        return linear #, logits
+        return self.reparameterize(mu, log_var)
 
-
+    def reparameterize(self, mu, log_var):
+        # Sample epsilon from standard normal distribution
+        eps = torch.randn(mu.size(0), mu.size(1)).cuda()
+        # note that log(x^2) = 2*log(x); hence divide by 2 to get std_dev
+        z = mu + eps * torch.exp(log_var / 2.)
+        return z
 
 class CNNDecoder(nn.Module):
     def __init__(self, input_nc=512, hidden_nc=32, output_nc=1, n_layers=6, stride_layer=2):
@@ -95,7 +105,10 @@ class CNNDecoder(nn.Module):
                 nn.ReLU(True) #nn.LeakyReLU(0.2, True)
             ]
 
-        sequence += [nn.ConvTranspose2d(hidden_nc * nf_mult, output_nc, kernel_size=kw, stride=1, padding=padw)]
+        sequence += [
+            nn.ConvTranspose2d(hidden_nc * nf_mult, output_nc, kernel_size=kw, stride=1, padding=padw),
+            nn.Sigmoid()
+        ]
 
         self.reshape_model = nn.Sequential(*reshape_sequence)
         self.model = nn.Sequential(*sequence)
