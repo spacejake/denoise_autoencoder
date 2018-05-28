@@ -39,12 +39,20 @@ seq_size=16
 
 transform = transforms.Compose([
     RandomNoiseWithGT(),
-    transforms.ToTensor()
+    transforms.ToTensor(),
+    transforms.Normalize((0.1307,), (0.3081,))
 ])
 
-raw_data = dset.MNIST("../autoencoderMNIST/MNIST", download=True, transform=transform)
-dloader = torch.utils.data.DataLoader(raw_data, batch_size=batch_size,
+raw_data = dset.MNIST("../autoencoderMNIST/MNIST", train=True, download=True, transform=transform)
+raw_test = dset.MNIST("../autoencoderMNIST/MNIST", train=False, download=True, transform=transform)
+dloader_train = torch.utils.data.DataLoader(raw_data, batch_size=batch_size,
                                       shuffle=True, drop_last=True)
+
+dloader_test = torch.utils.data.DataLoader(raw_test, batch_size=batch_size,
+                                      shuffle=True, drop_last=True)
+
+dloader = dloader_train
+
 in_channel = 1 # Network has same dim for input and output
 
 encoder = CNNEncoder(input_nc=1, output_nc=1024)
