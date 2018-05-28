@@ -16,7 +16,7 @@ import torchvision.utils
 
 from skimage import data, img_as_float, color
 from skimage.util import random_noise
-from cnn_encoder import CNNEncoder, CNNDecoder
+from cnn_encoder import CNNEncoder, CNNDecoder, NLayerDiscriminator, GANLoss
 
 from transforms import RandomNoiseWithGT
 
@@ -32,6 +32,42 @@ def loss_function(recon_x, x, mu, logvar):
     KLD /= args.batch_size * 784
 
     return BCE + KLD
+
+
+def backwardG(fake, gt, w_id=1):
+    optimizer_G.zero_grad()
+    # GAN Loss
+    #loss_G = crit_gan(discriminator(fake), True)
+    pred_fake = discriminator(fake)
+    true = torch.ones(pred_fake.shape).cuda()
+    loss_G = crit_gan(pred_fake, true)
+
+    # ID Loss
+    loss_ID = critID(fake, gt)
+    loss_G_total = loss_G + loss_ID * w_id
+    loss_G_total.backward()
+    optimizer_G.step()
+
+    return loss_G_total, loss_G, loss_ID
+
+
+def backwardD(fake, gt):
+    # Train Discriminator
+    optimizer_D.zero_grad()
+    pred_real = discriminator(gt)
+    true = torch.ones(pred_real.shape).cuda()
+    loss_D_real = crit_gan(pred_real, true)
+
+    # Fake
+    pred_fake = discriminator(fake.detach())
+    false = torch.ones(pred_fake.shape).cuda()
+    loss_D_fake = crit_gan(pred_fake, false)
+    # Combined loss
+    loss_D = (loss_D_real + loss_D_fake) * 0.5
+    # backward
+    loss_D.backward()  # retain_graph=True)
+    optimizer_D.step()
+    return loss_D
 
 output_dir='./out'
 batch_size = 32#4
@@ -53,32 +89,46 @@ print(encoder)
 decoder = CNNDecoder(input_nc=1024)
 print(decoder)
 
+discriminator = NLayerDiscriminator(input_nc=1)#, use_sigmoid=True)
+print(discriminator)
+
 encoder.cuda()
 decoder.cuda()
+discriminator.cuda()
 
-crit = nn.MSELoss() #nn.BCEWithLogitsLoss()
-crit.cuda()
+crit_gan = nn.MSELoss() #nn.BCEWithLogitsLoss() #GANLoss()
+crit_gan.cuda()
+critID = nn.MSELoss() #nn.BCEWithLogitsLoss()
+critID.cuda()
 
-params = itertools.chain(encoder.parameters(), decoder.parameters())
-optimizer = optim.Adam(params)#, lr=1e-4)#, weight_decay=1e-4)
+# IF TRAIN, else MSELoss
+params_G = itertools.chain(encoder.parameters(), decoder.parameters())
+params_D = itertools.chain(discriminator.parameters())
 
+optimizer_G = optim.Adam(params_G)#, weight_decay=1e-4)
+optimizer_D = optim.Adam(params_D)#, weight_decay=1e-4)
+
+optimizers = []
+schedulers = []
+
+optimizers.append(optimizer_G)
+optimizers.append(optimizer_D)
 
 # Decay LR by a factor of 0.1 every 5 epochs
-exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-#exp_lr_scheduler = lr_scheduler.ExponentialLR(optimizer, step_size=3, gamma=0.1)
+for optimizer in optimizers:
+    schedulers.append(lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1))
 
-#exp_lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=0, threshold=1e-4, mode='min',
-#                                             factor=0.1, min_lr=1e-6,verbose=True)
 s = 1
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
 for e in range(100):
-    exp_lr_scheduler.step()
+    for scheduler in schedulers:
+        scheduler.step()
+
     ep_loss = []
     for i, v in enumerate(dloader):
-        optimizer.zero_grad()
 
         corrupt_imgs = (v[0])[:,:,:,:28].cuda()
         gt_imgs = (v[0])[:,:,:,28:].cuda()
@@ -94,21 +144,25 @@ for e in range(100):
         #loss##
         #######
         output = logits
-        #output = torch.sigmoid(logits)
 
-        #output = torch.sigmoid(decoder_out)
-        #output = threshold(decoder_out)
+        ##############
+        #GAN Backprop#
+        ##############
+        loss_G_total, loss_G, loss_ID = backwardG(output, gt_imgs)
+        ep_loss.append(loss_ID.data.cpu().numpy())
 
-        loss = crit(output, gt_imgs)
-        ep_loss.append(loss.data.cpu().numpy())
+        ########################
+        #Discriminator Backprop#
+        ########################
+        loss_D = backwardD(output, gt_imgs)
 
-        loss.backward()
-        optimizer.step()
 
         if i % 100 == 0:
-            print("Epoch: {0} | Iter: {1} | LR:{2}".format(e, i, exp_lr_scheduler.get_lr()[0]))
+            print("Epoch: {0} | Iter: {1} | LR:{2}".format(e, i, schedulers[0].get_lr()[0]))
             #print("Epoch: {0} | Iter: {1}".format(e, i))
-            print("Loss: {0}".format(loss.data.cpu().numpy()))#[0]))
+            print("MSELoss: {0}, GLoss: {1}, DLoss: {2}".format(loss_ID.data.cpu().numpy(),
+                                                                loss_G.detach().cpu().numpy(),
+                                                                loss_D.detach().cpu().numpy()))#[0]))
             print("===========================")
 
 
@@ -118,10 +172,12 @@ for e in range(100):
             samples = torch.cat((samples, gt_imgs.clone().data.cpu()[:1,:,:,:]))
 
             torchvision.utils.save_image(samples,
-                                "./out/{0},epoch{1},iter{2}.png".format(s,
-                                                                         e,i),
+                                         "./out/{0},epoch{1},iter{2}.png".format(s,e,i),
                                          nrow=3)
             s += 1
+
     avg_loss = sum(ep_loss)/len(ep_loss)
     print("Average epoch loss: ", avg_loss)
     #exp_lr_scheduler.step(avg_loss)
+
+
