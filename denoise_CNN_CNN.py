@@ -49,10 +49,10 @@ dloader = torch.utils.data.DataLoader(raw_data, batch_size=batch_size,
                                       shuffle=True, drop_last=True)
 in_channel = 1 # Network has same dim for input and output
 
-encoder = CNNEncoder(input_nc=1, output_nc=1024)
+encoder = CNNEncoder(input_nc=1, output_nc=784)
 print(encoder)
 
-decoder = CNNDecoder(input_nc=1024)
+decoder = CNNDecoder(input_nc=784)
 print(decoder)
 
 encoder.cuda()
@@ -66,7 +66,7 @@ optimizer = optim.Adam(params)#, lr=1e-4)#, weight_decay=1e-4)
 
 
 # Decay LR by a factor of 0.1 every 5 epochs
-exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 #exp_lr_scheduler = lr_scheduler.ExponentialLR(optimizer, step_size=3, gamma=0.1)
 
 #exp_lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=0, threshold=1e-4, mode='min',
