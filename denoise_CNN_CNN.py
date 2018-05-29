@@ -92,7 +92,6 @@ seq_size=16
 transform = transforms.Compose([
     RandomNoiseWithGT(),
     transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
 ])
 
 raw_data = dset.MNIST("../autoencoderMNIST/MNIST", train=True, download=True, transform=transform)
