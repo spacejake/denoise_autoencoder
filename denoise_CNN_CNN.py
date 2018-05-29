@@ -19,10 +19,19 @@ from skimage.util import random_noise
 from cnn_encoder import CNNEncoder, CNNDecoder
 
 from transforms import RandomNoiseWithGT
+#from git import Repo
 
+branch = "default"
 
-isTrain = False
-save_dir = "./checkpoints"
+#try:
+#    repo = Repo(os.getcwd())
+#    branch = repo.active_branch
+#    branch = branch.name
+#except:
+#    pass
+
+isTrain = True #False
+save_dir = "./chkpnts_{}".format(branch)
 
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
@@ -57,8 +66,8 @@ def loss_function(recon_x, x, mu, logvar):
     KLD /= args.batch_size * 784
 
     return BCE + KLD
-
-output_dir='./out'
+mode = "train" if isTrain else "test"
+output_dir='./out_{}'.format(mode)
 batch_size = 32#4
 seq_size=16
 
@@ -157,14 +166,15 @@ for e in range(100):
             print("===========================")
 
 
-        if i % 500 == 0 or (isTrain is False and i%100 == 0):
+        if (isTrain is False and i%50 == 0) or (isTrain is True and s < 50 and i%10 == 0) or i % 500 == 0:
             samples = corrupt_imgs.clone().data.cpu()[:10,:,:,:]
             samples = torch.cat((samples, output.data.cpu()[:10,:,:,:]))
             samples = torch.cat((samples, gt_imgs.clone().data.cpu()[:10,:,:,:]))
-
+            fname = "{1},epoch{2},iter{3}.png".format(output_dir, s, e, i)
+            fname = os.path.join(output_dir, fname)
+            print("Saved image: ", fname)
             torchvision.utils.save_image(samples,
-                                "./out/{0},epoch{1},iter{2}.png".format(s,
-                                                                         e,i),
+                                         fname,
                                          nrow=10)
             s += 1
     if isTrain:
