@@ -2,6 +2,7 @@
 import os
 import itertools
 import numpy as np
+import argparse
 import torch
 import torch.nn as nn
 
@@ -19,19 +20,34 @@ from skimage.util import random_noise
 from cnn_encoder import CNNEncoder, CNNDecoder
 
 from transforms import RandomNoiseWithGT
-#from git import Repo
+from pygit2 import Repository
 
+def get_arguments():
+    """Parse all the arguments provided from the CLI.
+
+    Returns:
+      A list of parsed arguments.
+    """
+    parser = argparse.ArgumentParser(description="Denoise Autoencoder.")
+    parser.add_argument("--test", action="store_false", dest="isTrain", default=True,
+                        help="Run Test")
+    return parser.parse_args()
+
+args = get_arguments()
 branch = "default"
 
-#try:
-#    repo = Repo(os.getcwd())
-#    branch = repo.active_branch
-#    branch = branch.name
-#except:
-#    pass
+try:
+    branch = Repository('.').head.shorthand
+except:
+    pass
 
-isTrain = True #False
-save_dir = "./chkpnts_{}".format(branch)
+isTrain = args.isTrain
+if isTrain:
+    print("Trainging...")
+else:
+    print("Testing...")
+
+save_dir = "./{}/chkpnts".format(branch)
 
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
@@ -67,7 +83,7 @@ def loss_function(recon_x, x, mu, logvar):
 
     return BCE + KLD
 mode = "train" if isTrain else "test"
-output_dir='./out_{}'.format(mode)
+output_dir='./{0}/out_{1}'.format(branch,mode)
 batch_size = 32#4
 seq_size=16
 
@@ -172,7 +188,7 @@ for e in range(100):
             samples = torch.cat((samples, gt_imgs.clone().data.cpu()[:10,:,:,:]))
             fname = "{1},epoch{2},iter{3}.png".format(output_dir, s, e, i)
             fname = os.path.join(output_dir, fname)
-            print("Saved image: ", fname)
+
             torchvision.utils.save_image(samples,
                                          fname,
                                          nrow=10)
