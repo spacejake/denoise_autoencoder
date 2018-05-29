@@ -14,6 +14,8 @@ class RandomNoise(object):
 
     def __init__(self):
         self.seed=None
+        self.variance=1*0.8
+        print("Noise Variance: {}".format(self.variance))
 
     def __call__(self, img):
         """
@@ -24,8 +26,7 @@ class RandomNoise(object):
         """
         #variance = np.var(img)
         #print("var: ", variance)
-        variance=0.5
-        return random_noise(img, var=(variance*0.8))
+        return random_noise(img, var=self.variance)
 
     def __repr__(self):
         return self.__class__.__name__ + '(seed={0})'.format(self.seed)
