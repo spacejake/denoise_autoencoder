@@ -29,8 +29,10 @@ def get_arguments():
       A list of parsed arguments.
     """
     parser = argparse.ArgumentParser(description="Denoise Autoencoder.")
+    parser.add_argument("--train", action="store_true", dest="isTrain", default=True,
+                        help="Train model, save checkpoints (Default)")
     parser.add_argument("--test", action="store_false", dest="isTrain", default=True,
-                        help="Run Test")
+                        help="Test model, load checkpoints")
     return parser.parse_args()
 
 args = get_arguments()
@@ -46,7 +48,6 @@ if isTrain:
     print("Trainging...")
 else:
     print("Testing...")
-
 save_dir = "./{}/chkpnts".format(branch)
 
 if not os.path.exists(save_dir):
@@ -69,6 +70,7 @@ def load_network(network, network_label, epoch_label):
         network.load_state_dict(torch.load(save_path))
     else:
         print("Cannot Find Model: {}".format(save_path))
+        exit(1)
 
 def loss_function(recon_x, x, mu, logvar):
     BCE = F.binary_cross_entropy(recon_x, x.view(-1, 784))
