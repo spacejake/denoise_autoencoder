@@ -12,9 +12,9 @@ class RandomNoise(object):
             made.
     """
 
-    def __init__(self):
+    def __init__(self, var=0.8):
         self.seed=None
-        self.variance=1*0.8
+        self.variance=var
         print("Noise Variance: {}".format(self.variance))
 
     def __call__(self, img):

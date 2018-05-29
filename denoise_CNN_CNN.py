@@ -33,6 +33,8 @@ def get_arguments():
                         help="Train model, save checkpoints (Default)")
     parser.add_argument("--test", action="store_false", dest="isTrain", default=True,
                         help="Test model, load checkpoints")
+    parser.add_argument("--noise", dest="noise_var", default=0.8, type=float,
+                        help="Random Noise Variance, Default = 0.8")
     return parser.parse_args()
 
 args = get_arguments()
@@ -90,7 +92,7 @@ batch_size = 32#4
 seq_size=16
 
 transform = transforms.Compose([
-    RandomNoiseWithGT(),
+    RandomNoiseWithGT(args.noise_var),
     transforms.ToTensor(),
 ])
 
@@ -129,7 +131,7 @@ if isTrain is True:
 
 
     # Decay LR by a factor of 0.1 every 5 epochs
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
     #exp_lr_scheduler = lr_scheduler.ExponentialLR(optimizer, step_size=3, gamma=0.1)
 
     #exp_lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=0, threshold=1e-4, mode='min',
@@ -183,7 +185,7 @@ for e in range(100):
             print("===========================")
 
 
-        if (isTrain is False and i%50 == 0) or (isTrain is True and s < 50 and i%10 == 0) or i % 500 == 0:
+        if (isTrain is False and i%25 == 0) or (isTrain is True and s < 50 and i%10 == 0) or i % 500 == 0:
             samples = corrupt_imgs.clone().data.cpu()[:10,:,:,:]
             samples = torch.cat((samples, output.data.cpu()[:10,:,:,:]))
             samples = torch.cat((samples, gt_imgs.clone().data.cpu()[:10,:,:,:]))
