@@ -20,6 +20,31 @@ from cnn_encoder import CNNEncoder, CNNDecoder
 
 from transforms import RandomNoiseWithGT
 
+
+isTrain = False
+save_dir = "./checkpoints"
+
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+
+# helper saving function that can be used by subclasses
+def save_network(network, network_label, epoch_label):
+    save_filename = '%s_net_%s.pth' % (epoch_label, network_label)
+    save_path = os.path.join(save_dir, save_filename)
+    torch.save(network.cpu().state_dict(), save_path)
+    if torch.cuda.is_available():
+        network.cuda()
+
+# helper loading function that can be used by subclasses
+def load_network(network, network_label, epoch_label):
+    save_filename = '%s_net_%s.pth' % (epoch_label, network_label)
+    save_path = os.path.join(save_dir, save_filename)
+    if os.path.isfile(save_path):
+        print("Loading model: {}".format(save_path))
+        network.load_state_dict(torch.load(save_path))
+    else:
+        print("Cannot Find Model: {}".format(save_path))
+
 def loss_function(recon_x, x, mu, logvar):
     BCE = F.binary_cross_entropy(recon_x, x.view(-1, 784))
 
@@ -51,7 +76,7 @@ dloader_train = torch.utils.data.DataLoader(raw_data, batch_size=batch_size,
 dloader_test = torch.utils.data.DataLoader(raw_test, batch_size=batch_size,
                                       shuffle=True, drop_last=True)
 
-dloader = dloader_train
+dloader = dloader_train if isTrain == True else dloader_test
 
 in_channel = 1 # Network has same dim for input and output
 
@@ -61,32 +86,42 @@ print(encoder)
 decoder = CNNDecoder(input_nc=1024)
 print(decoder)
 
+if isTrain is False:
+    which_epoch = 'latest'
+    load_network(encoder, 'Encoder', which_epoch)
+    load_network(decoder, 'Decoder', which_epoch)
+
 encoder.cuda()
 decoder.cuda()
 
 crit = nn.MSELoss() #nn.BCEWithLogitsLoss()
 crit.cuda()
 
-params = itertools.chain(encoder.parameters(), decoder.parameters())
-optimizer = optim.Adam(params)#, lr=1e-4)#, weight_decay=1e-4)
+if isTrain is True:
+    params = itertools.chain(encoder.parameters(), decoder.parameters())
+    optimizer = optim.Adam(params)#, lr=1e-4)#, weight_decay=1e-4)
 
 
-# Decay LR by a factor of 0.1 every 5 epochs
-exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-#exp_lr_scheduler = lr_scheduler.ExponentialLR(optimizer, step_size=3, gamma=0.1)
+    # Decay LR by a factor of 0.1 every 5 epochs
+    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    #exp_lr_scheduler = lr_scheduler.ExponentialLR(optimizer, step_size=3, gamma=0.1)
 
-#exp_lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=0, threshold=1e-4, mode='min',
-#                                             factor=0.1, min_lr=1e-6,verbose=True)
-s = 1
+    #exp_lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=0, threshold=1e-4, mode='min',
+    #                                             factor=0.1, min_lr=1e-6,verbose=True)
+
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
+s = 0
+
 for e in range(100):
-    exp_lr_scheduler.step()
+    if isTrain:
+        exp_lr_scheduler.step()
     ep_loss = []
     for i, v in enumerate(dloader):
-        optimizer.zero_grad()
+        if isTrain:
+            optimizer.zero_grad()
 
         corrupt_imgs = (v[0])[:,:,:,:28].cuda()
         gt_imgs = (v[0])[:,:,:,28:].cuda()
@@ -110,26 +145,41 @@ for e in range(100):
         loss = crit(output, gt_imgs)
         ep_loss.append(loss.data.cpu().numpy())
 
-        loss.backward()
-        optimizer.step()
+        if isTrain:
+            loss.backward()
+            optimizer.step()
 
         if i % 100 == 0:
-            print("Epoch: {0} | Iter: {1} | LR:{2}".format(e, i, exp_lr_scheduler.get_lr()[0]))
+            if isTrain:
+                print("Epoch: {0} | Iter: {1} | LR:{2}".format(e, i, exp_lr_scheduler.get_lr()[0]))
             #print("Epoch: {0} | Iter: {1}".format(e, i))
-            print("Loss: {0}".format(loss.data.cpu().numpy()))#[0]))
+            print("Epoch: {0} | Iter: {1} | Loss: {2}".format(e, i, ep_loss[-1]))#[0]))
             print("===========================")
 
 
-        if i % 500 == 0:
-            samples = corrupt_imgs.clone().data.cpu()[:1,:,:,:]
-            samples = torch.cat((samples, output.data.cpu()[:1,:,:,:]))
-            samples = torch.cat((samples, gt_imgs.clone().data.cpu()[:1,:,:,:]))
+        if i % 500 == 0 or (isTrain is False and i%100 == 0):
+            samples = corrupt_imgs.clone().data.cpu()[:10,:,:,:]
+            samples = torch.cat((samples, output.data.cpu()[:10,:,:,:]))
+            samples = torch.cat((samples, gt_imgs.clone().data.cpu()[:10,:,:,:]))
 
             torchvision.utils.save_image(samples,
                                 "./out/{0},epoch{1},iter{2}.png".format(s,
                                                                          e,i),
-                                         nrow=3)
+                                         nrow=10)
             s += 1
+    if isTrain:
+        save_network(encoder, 'Encoder', 'latest')
+        save_network(decoder, 'Decoder', 'latest')
+        if e%100 == 0:
+            save_network(encoder, 'Encoder', e)
+            save_network(decoder, 'Decoder', e)
+
     avg_loss = sum(ep_loss)/len(ep_loss)
     print("Average epoch loss: ", avg_loss)
     #exp_lr_scheduler.step(avg_loss)
+    if isTrain is False:
+        break
+
+if isTrain:
+    save_network(encoder, 'Encoder', 'latest')
+    save_network(decoder, 'Decoder', 'latest')
