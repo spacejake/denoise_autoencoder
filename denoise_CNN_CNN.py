@@ -174,7 +174,7 @@ for e in range(100):
         #output = threshold(decoder_out)
 
         loss = crit(output, gt_imgs, mu, logvar)
-
+        klloss = loss.data.cpu().numpy()
         mseloss = F.mse_loss(output, gt_imgs)
         ep_loss.append(mseloss.data.cpu().numpy())
 
@@ -187,7 +187,7 @@ for e in range(100):
                 print("Epoch: {0} | Iter: {1} | LR:{2}".format(e, i, exp_lr_scheduler.get_lr()[0]))
             #print("Epoch: {0} | Iter: {1}".format(e, i))
 
-            print("Epoch: {0} | Iter: {1} | Loss: {2}".format(e, i, ep_loss[-1]))#[0]))
+            print("Epoch: {0} | Iter: {1} | KLloss: {2} | MSELoss: {3}".format(e, i, klloss, ep_loss[-1]))#[0]))
             print("===========================")
 
 
